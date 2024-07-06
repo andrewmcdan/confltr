@@ -15,6 +15,7 @@
 #include <memory>
 #include <stdexcept>
 #include <array>
+#include <conio.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -74,18 +75,41 @@ void runProcess(const std::string& executable, const std::string& startIn, const
     BOOL bSuccess = FALSE;
 
     while (true) {
-        bSuccess = ReadFile(g_hChildStd_OUT_Rd, chBuf, 4096, &dwRead, NULL);
-        if (!bSuccess || dwRead == 0) break;
+        // check for data on the child process's stdout nonblocking using PeekNamedPipe
+        DWORD dwAvail = 0;
+        if (PeekNamedPipe(g_hChildStd_OUT_Rd, NULL, 0, NULL, &dwAvail, NULL) && dwAvail > 0) {
+            bSuccess = ReadFile(g_hChildStd_OUT_Rd, chBuf, 4096, &dwRead, NULL);
+            if (!bSuccess || dwRead == 0) break;
 
-        std::string line(chBuf, dwRead);
-        if (useRegex) {
-            if (std::regex_search(line, std::regex(filter))) {
-                std::cout << line;
+            std::string line(chBuf, dwRead);
+            if (useRegex) {
+                if (std::regex_search(line, std::regex(filter))) {
+                    std::cout << line;
+                }
+            } else {
+                if (line.find(filter) != std::string::npos) {
+                    std::cout << line;
+                }
             }
-        } else {
-            if (line.find(filter) != std::string::npos) {
-                std::cout << line;
+        }
+
+        if(_kbhit()) {
+            char ch = _getch();
+            if (ch == 3) {
+                break;
             }
+            DWORD dwWritten;
+            WriteFile(g_hChildStd_IN_Wr, &ch, 1, &dwWritten, NULL);
+        }
+
+
+        
+
+        // if the process has exited, break out of the loop
+        DWORD exitCode;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        if (exitCode != STILL_ACTIVE) {
+            break;
         }
     }
 
